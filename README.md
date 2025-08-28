@@ -21,7 +21,7 @@ A Python-based USB port security application for Windows with:
 
 ## 📂 Project Structure
 ```
-usb-physical-security/
+usb-control/
 │
 ├── secure_usb_control.py  # Python project code 
 ├── requirements.txt     # Dependencies
