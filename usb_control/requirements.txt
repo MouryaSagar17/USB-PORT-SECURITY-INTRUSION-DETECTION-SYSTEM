@@ -1,0 +1,4 @@
+bcrypt
+opencv-python
+Pillow
+tk
