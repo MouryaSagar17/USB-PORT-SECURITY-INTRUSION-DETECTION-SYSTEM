@@ -21,7 +21,7 @@ import subprocess
 import threading
 import logging
 import ctypes
-
+import webbrowser
 # Optional imports (handle gracefully if missing)
 try:
     import cv2
@@ -166,7 +166,20 @@ class DBService:
         cur.execute("UPDATE users SET pwd_hash = ? WHERE email = ?", (pwd_hash, email.lower()))
         conn.commit()
         conn.close()
-    
+    def set_user_admin(self, email, is_admin: bool):
+        conn = self._conn()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET is_admin = ? WHERE email = ?", (1 if is_admin else 0, email.lower()))
+        conn.commit()
+        conn.close()
+
+    def delete_user(self, email):
+        conn = self._conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE email = ?", (email.lower(),))
+        conn.commit()
+        conn.close()
+
     # OTPs
     def store_otp(self, email, otp_hash, salt, expires_at_iso):
         conn = self._conn()
@@ -548,7 +561,7 @@ class ModernLoginUI:
     
     def setup_window(self):
         self.root.title('USB Physical Security - Login')
-        self.root.geometry('900x700')
+        self.root.geometry('900x650')
         self.root.configure(bg=DARK_BG)
         self.root.resizable(False, False)
     
@@ -750,7 +763,7 @@ class ModernMainUI:
     
     def setup_window(self):
         self.root.title('USB Physical Security For Systems')
-        self.root.geometry('700x800')
+        self.root.geometry('1000x650')
         self.root.configure(bg='black')
         self.root.resizable(False, False)
     
@@ -847,14 +860,9 @@ class ModernMainUI:
         # Keyboard shortcuts
         self.root.bind_all('<Control-l>', lambda e: self.handle_logout())
     def open_project_file(self):
-        file_path = r"M:\Mourya\Projects\CYBER_SECURITY\usb_control\B.Tech-CSE-Cyber Security-R20.pdf"
+        file_path = r"M:\Mourya\Projects\CYBER_SECURITY\usb-physical-security\Project Information.html"
         try:
-            if sys.platform.startswith('darwin'):   # macOS
-                subprocess.call(('open', file_path))
-            elif os.name == 'nt':  # Windows
-                os.startfile(file_path)
-            elif os.name == 'posix':  # Linux
-                subprocess.call(('xdg-open', file_path))
+            webbrowser.open_new_tab(f"file:///{file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Cannot open file:\n{e}")
 
@@ -901,12 +909,12 @@ class ModernMainUI:
         self.root.geometry(f'{width}x{height}+{x}+{y}')
     
     def open_admin_panel(self):
-        """Open admin panel if not already open"""
-        if self.admin_panel is None or not self.admin_panel.winfo_exists():
+        if self.admin_panel is None or not self.admin_panel.win.winfo_exists():
             self.admin_panel = ModernAdminPanel(self.root, self.current_user['email'], self.db, self.core)
         else:
-            self.admin_panel.lift()
-            self.admin_panel.focus_set()
+            self.admin_panel.win.lift()
+            self.admin_panel.win.focus_set()
+
     
     def user_action_flow(self, action):
         email = self.current_user.get('email')
@@ -1131,7 +1139,9 @@ class ModernAdminPanel:
         user_btn_frame.pack(fill='x')
         
         ttk.Button(user_btn_frame, text='Refresh', command=self.refresh_users).pack(side='left', padx=(0, 10))
-        ttk.Button(user_btn_frame, text='Toggle Enabled', command=self.toggle_user_enabled).pack(side='left', padx=(0, 10))
+        ttk.Button(user_btn_frame, text='Toggle USB Enabled', command=self.toggle_user_enabled).pack(side='left', padx=(0, 10))
+        ttk.Button(user_btn_frame, text='Toggle Admin', command=self.toggle_user_admin).pack(side='left', padx=(0, 10))
+        ttk.Button(user_btn_frame, text='Delete User', command=self.delete_user).pack(side='left')
         ttk.Button(user_btn_frame, text='Reset Password', command=self.reset_user_password).pack(side='left')
     
     def create_logs_tab(self):
@@ -1267,7 +1277,35 @@ class ModernAdminPanel:
         except Exception as e:
             self.db.log_event(email, 'PASSWORD_RESET', 'FAILED', str(e))
             messagebox.showerror('Error', f'Could not send email: {e}')
-    
+    def toggle_user_admin(self):
+        selected = self.user_tree.selection()
+        if not selected:
+            messagebox.showerror('Error', 'Please select a user')
+            return
+
+        item = self.user_tree.item(selected[0])
+        email = item['values'][0]
+        current_admin = item['values'][2] == 'Yes'
+
+        self.db.set_user_admin(email, not current_admin)
+        messagebox.showinfo('Success', f'User {email} admin rights {"revoked" if current_admin else "granted"}')
+        self.refresh_users()
+
+    def delete_user(self):
+        selected = self.user_tree.selection()
+        if not selected:
+            messagebox.showerror('Error', 'Please select a user')
+            return
+
+        item = self.user_tree.item(selected[0])
+        email = item['values'][0]
+
+        if messagebox.askyesno('Confirm Delete', f'Are you sure you want to delete user {email}?'):
+            self.db.delete_user(email)
+            self.db.log_event(self.admin_email, 'DELETE_USER', 'SUCCESS', f'user={email}')
+            messagebox.showinfo('Deleted', f'User {email} deleted successfully')
+            self.refresh_users()
+
     def refresh_logs(self):
         logs = self.db.get_logs(limit=500)
         self.logs_text.config(state='normal')
